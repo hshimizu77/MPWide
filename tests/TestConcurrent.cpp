@@ -22,13 +22,21 @@
 #include <iostream>
 #include <fstream>
 #include <cstdlib>
-#include <unistd.h>
+
 #include <cmath>
 #include <iostream>
-#include <pthread.h>
+
 #include <stack>
 #include <cstring>
 #include <errno.h>
+
+#include <thread>
+#include <mutex>
+#include <future>
+
+#include <winsock2.h>
+#include <ws2tcpip.h>
+
 
 using namespace std;
 
@@ -40,10 +48,10 @@ using namespace std;
 */
 
 
-pthread_mutex_t log_mutex;
-pthread_mutex_t path_mutex;
+std::mutex log_mutex;
+std::mutex path_mutex;
 
-#define LOG(X) { pthread_mutex_lock(&log_mutex); cout << X << endl; pthread_mutex_unlock(&log_mutex); }
+#define LOG(X) { log_mutex.lock(); cout << X << endl; log_mutex.unlock(); }
 
 struct vars
 {
@@ -54,17 +62,17 @@ struct vars
 
 int do_connect(string host, int port, int num_channels, bool asServer)
 {
-  pthread_mutex_lock(&path_mutex);
+  path_mutex.lock();
   int path_id = MPW_CreatePathWithoutConnect(host, port, num_channels); ///path version
-  pthread_mutex_unlock(&path_mutex);
+  path_mutex.unlock();
 
   if (path_id >= 0) {
     LOG("Connecting to path " << path_id << "; server: " << asServer);
     
     if (MPW_ConnectPath(path_id, asServer) < 0) {
-      pthread_mutex_lock(&path_mutex);
+      path_mutex.lock();
       MPW_DestroyPath(path_id);
-      pthread_mutex_unlock(&path_mutex);
+      path_mutex.unlock();
       path_id = -1;
     }
     
@@ -75,7 +83,7 @@ int do_connect(string host, int port, int num_channels, bool asServer)
   return path_id;
 }
 
-void *server_thread(void * data)
+int *server_thread(void * data)
 {
   int num_channels = ((vars *)data)->num_channels_or_path_id;
   int *path_id = new int;
@@ -85,7 +93,7 @@ void *server_thread(void * data)
   return path_id;
 }
 
-void *connecting_thread(void *data)
+int *connecting_thread(void *data)
 {
   int num_channels = ((vars *)data)->num_channels_or_path_id;
   size_t msg_size = ((vars *)data)->msg_size;
@@ -94,11 +102,11 @@ void *connecting_thread(void *data)
   int path_id = do_connect("localhost", 16256, num_channels, false);
   while (path_id < 0) {
     // Sleep 1.0 seconds
-    usleep(1000000);
+    Sleep(1000);
     path_id = do_connect("localhost", 16256, num_channels, false);
   }
 
-  usleep(1000000);
+  Sleep(1000);
   if (path_id >= 0) {
     LOG("Succesfully connected to server");
     if (((vars *)data)->do_send) {
@@ -111,11 +119,11 @@ void *connecting_thread(void *data)
         
         res = -MPW_SendRecv(0, 0, buf, msg_size, path_id);
         if (res > 0) LOG("Error receiving in connecting thread: " << strerror(res) << "/" << res);
-        usleep(1000);
+        Sleep(1);
 
         res = -MPW_SendRecv(buf, msg_size, 0, 0, path_id);
         if (res > 0) LOG("Error sending in connecting thread: " << strerror(res) << "/" << res);
-        usleep(1000);
+        Sleep(1);
       }
       
       delete [] buf;
@@ -126,7 +134,7 @@ void *connecting_thread(void *data)
   return res;
 }
 
-void *communicating_thread(void *data)
+void *communicating_thread(void	*data)
 {
   int path_id = ((vars *)data)->num_channels_or_path_id;
   size_t msg_size = ((vars *)data)->msg_size;
@@ -155,7 +163,7 @@ void *communicating_thread(void *data)
     if (do_send) {
       int id = MPW_ISendRecv(buf, msg_size, 0, 0, path_id);
   
-      sleep(1);
+      Sleep(1000);
 
       cout << "Has the non-blocking comm finished?" << endl;
       MPW_Has_NBE_Finished(id);
@@ -165,7 +173,7 @@ void *communicating_thread(void *data)
     } else {
       int id = MPW_ISendRecv(0, 0, buf, msg_size, path_id);
 
-      sleep(1);
+      Sleep(1000);
   
       cout << "Has the non-blocking comm finished?" << endl;
       MPW_Has_NBE_Finished(id);
@@ -180,11 +188,13 @@ void *communicating_thread(void *data)
 }
 
 int main(int argc, char** argv){
-  pthread_mutex_init(&path_mutex, NULL);
-  pthread_mutex_init(&log_mutex, NULL);
 
   //  printf("usage: ./MPWConcurrentTest <channels (default: 1)> [<message size [kB] (default: 8 kB))>]\n");
   //  exit(EXIT_FAILURE);
+
+  //Initialize Winsock 
+  WSADATA wsaData;
+  int iResult = WSAStartup(MAKEWORD(2, 2), &wsaData);
 
   /* Initialize */
   int num_channels = (argc>1) ? atoi(argv[1]) : 1;
@@ -192,56 +202,62 @@ int main(int argc, char** argv){
 
   vars v = {num_channels, msgsize, true};
   
-  pthread_t server_t, connect_t, send_t, recv_t;
+  std::thread server_t, connect_t, send_t, recv_t;
   
   // Start accepting connections
-  pthread_create(&server_t, NULL, &server_thread, &v);
-  
+  std::future<int*> accepted_path_future = std::async(launch::async, server_thread, &v);
+
   // Connect to server after giving it some time to start
-  pthread_create(&connect_t, NULL, &connecting_thread, &v);
-  
+  std::future<int*> connected_path_future = std::async(launch::async, connecting_thread, &v);
+
   // Accept the connection of the server
   int *accepted_path_id;
   int *connected_path_id;
 
-  pthread_join(server_t, (void **)&accepted_path_id);
+  accepted_path_id = accepted_path_future.get();
   
   // Failed until shown otherwise
   int exit_value = EXIT_FAILURE;
   
   if (*accepted_path_id >= 0) {    
     // Start accepting connections again
-    pthread_create(&server_t, NULL, &server_thread, &v);
-    
+
+	accepted_path_future = std::async(launch::async, server_thread, &v);
+
     vars sendv = {*accepted_path_id, msgsize, true};
     vars recvv = {*accepted_path_id, msgsize, false};
     delete accepted_path_id;
     
-    pthread_create(&send_t, NULL, &communicating_thread, &sendv);
-    pthread_create(&recv_t, NULL, &communicating_thread, &recvv);
+	send_t = std::thread(communicating_thread, &sendv);
+    recv_t = std::thread(communicating_thread, &recvv);
 
-    pthread_join(send_t, NULL);
-    pthread_join(recv_t, NULL);
-    pthread_join(connect_t, (void **)&connected_path_id);
-    delete connected_path_id;
+    send_t.join();
+    recv_t.join();
+
+	connected_path_id = connected_path_future.get();
+
+	delete connected_path_id;
     
     vars connectv = {num_channels, msgsize, false};
-    pthread_create(&connect_t, NULL, connecting_thread, &connectv);
-  
-    pthread_join(server_t, (void **)&accepted_path_id);
+
+	//connect_t = std::thread(connecting_thread, &connectv);
+	connected_path_future = std::async(launch::async, connecting_thread, &connectv);
+
+	accepted_path_id = accepted_path_future.get();
 
     if (*accepted_path_id >= 0)
       exit_value = EXIT_SUCCESS;
   }
 
   delete accepted_path_id;
-  pthread_join(connect_t, (void **)&connected_path_id);
+
+  //connect_t.join();
+  connected_path_id = connected_path_future.get();
+
   delete connected_path_id;
-  
-  pthread_mutex_destroy(&log_mutex);
-  pthread_mutex_destroy(&path_mutex);
-  
+    
   MPW_Finalize();
+  WSACleanup();
 
   cout << "MPWTestConcurrent completed successfully." << endl;
 

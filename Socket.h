@@ -22,13 +22,8 @@
 #ifndef MPW_Socket_class
 #define MPW_Socket_class
 
-#include <sys/types.h>
-#include <sys/socket.h>
-#include <netinet/in.h>
-#include <netdb.h>
-#include <unistd.h>
-#include <string>
-#include <arpa/inet.h>
+
+
 
 const int MAXHOSTNAME = 200;
 const int MAXCONNECTIONS = 5;
@@ -36,6 +31,7 @@ const int WINSIZE = 1*1024*1024;
 
 #define MPWIDE_SOCKET_RDMASK 1
 #define MPWIDE_SOCKET_WRMASK 2
+
 
 class Socket
 {
@@ -80,8 +76,10 @@ class Socket
   sockaddr_in m_addr;
   #ifdef MSG_NOSIGNAL
     static const int tcp_send_flag = MSG_NOSIGNAL;
-  #else //OSX Case
+  #elif defined(SO_NOSIGPIPE) //OSX Case
     static const int tcp_send_flag = SO_NOSIGPIPE;
+  #else	//Winsock case
+	static const int tcp_send_flag = 0;
   #endif
 
 };

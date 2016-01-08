@@ -23,13 +23,23 @@
 #include <fstream>
 #include <string.h>
 #include <stdlib.h>
-#include <unistd.h>
+
+#include <io.h>
 #include <math.h>
 #include <iostream>
+
+#include <thread>
+
+#include <winsock2.h>
+#include <ws2tcpip.h>
 
 using namespace std;
 
 #include "../MPWide.h"
+#include "../mpwide-macros.h"
+
+
+#pragma comment(lib, "Ws2_32.lib")
 
 /*
   Test.cpp
@@ -37,7 +47,7 @@ using namespace std;
 */
 
 int main(int argc, char** argv){
-
+	
   /* Initialize */
   int size = 1;
 
@@ -56,6 +66,14 @@ int main(int argc, char** argv){
   if(argc>4) {
     bufsize = atoi(argv[4]);
   }
+
+  //Initialize Winsock 
+  WSADATA wsaData;
+  int iResult = WSAStartup(MAKEWORD(2, 2), &wsaData);
+  if (iResult != NO_ERROR)
+	  LOG_ERR("Error at WSAStartup()\n");
+
+
 
 /* Optional functionality which disables autotuning and allows users to specify a software-based packet pacing rate. */
 //  if(argc>4) {
@@ -86,7 +104,7 @@ int main(int argc, char** argv){
   cerr << "\nSmall test completed, now commencing large test.\n" << endl;
 
   /* Creating message buffers for the performance tests. */
-  long long int len = bufsize*1024; 
+  size_t len = bufsize*1024; 
   char* msg  = (char*) malloc(len);
   char* msg2 = (char*) malloc(len);
 
@@ -115,14 +133,15 @@ int main(int argc, char** argv){
     
     /* We sleep for a second to prevent any interference on the line due to 
      * asynchronicity of the performance tests. */
-    sleep(1);
-    cout << "End of iteration " << i << "." << endl;
+	Sleep(1);
+	cout << "End of iteration " << i << "." << endl;
   }
 
   free(msg);
   free(msg2);
 
   MPW_Finalize();
+  WSACleanup();
 
   /* If the test doesn't crash or hang and this line is printed on both client and 
      server machine, we can consider it as a success. */

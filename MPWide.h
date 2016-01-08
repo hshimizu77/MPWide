@@ -18,8 +18,8 @@
  * You should have received a copy of the GNU General Public License
  * along with MPWide.  If not, see <http://www.gnu.org/licenses/>.
  * **************************************************************/
-#include <iostream>
-#include <cassert>
+
+#include <string>
 
 /* Enable/disable software-based packet pacing. */
 #define MPW_PacingMode 1
@@ -48,7 +48,7 @@ int MPW_Send(char* sendbuf, long long int sendsize, int path);
 int MPW_Recv(char* recvbuf, long long int recvsize, int path);
 int MPW_SendRecv(char* sendbuf, long long int sendsize, char* recvbuf, long long int recvsize, int path);
 // returns the size of the newly received data. 
-int MPW_DSendRecv(char* sendbuf, long long int sendsize, char* recvbuf, long long int maxrecvsize, int path);
+long long int MPW_DSendRecv(char* sendbuf, long long int sendsize, char* recvbuf, long long int maxrecvsize, int path);
 
 
 /* Initialize MPWide. */
@@ -117,4 +117,13 @@ extern "C" {
   void MPW_SendRecv_c (char* sendbuf, long long int sendsize, char* recvbuf, long long int recvsize, int* base_channel, int num_channels);
   void MPW_PSendRecv_c(char** sendbuf, long long int* sendsize, char** recvbuf, long long int* recvsize, int* channel, int num_channels);
 }
+
+
+//for Windows version
+#define W_OK 2
+#define F_OK 0
+
+
+
+
 

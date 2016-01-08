@@ -13,7 +13,7 @@
 #define MAX_NUM_PATHS 1000
 
 /* Enable (define)/Disable(don't define) Performance Timing Measurements */
-#define PERF_TIMING
+//#define PERF_TIMING
 
 // Run a performance monitoring thread
 #define MONITORING 1
@@ -50,12 +50,16 @@
 #define LVL_TRACE 6
 
 // SET THE LOG LEVEL
-#define LOG_LVL LVL_WARN
+#define LOG_LVL LVL_DEBUG
 
 #if LOG_LVL > LVL_NONE
-#include <pthread.h>
-static pthread_mutex_t __log_mutex__ = PTHREAD_MUTEX_INITIALIZER;
-#define DO_LOG_(MSG) { pthread_mutex_lock(&__log_mutex__); std::cout << MSG << std::endl; pthread_mutex_unlock(&__log_mutex__); }
+
+//#include <pthread.h>
+//static pthread_mutex_t __log_mutex__ = PTHREAD_MUTEX_INITIALIZER;
+//#define DO_LOG_(MSG) { pthread_mutex_lock(&__log_mutex__); std::cout << MSG << std::endl; pthread_mutex_unlock(&__log_mutex__); }
+#include <mutex>
+extern std::mutex mtx_log;
+#define DO_LOG_(MSG) { mtx_log.lock(); std::cout << MSG << std::endl; mtx_log.unlock(); }
 #endif
 
 #if LOG_LVL >= LVL_ERR
@@ -84,8 +88,6 @@ static pthread_mutex_t __log_mutex__ = PTHREAD_MUTEX_INITIALIZER;
 #define LOG_TRACE(MSG)
 #endif
 
-#define max(X,Y) ((X) > (Y) ? (X) : (Y))
-#define min(X,Y) ((X) < (Y) ? (X) : (Y))
 #define FLAG_CHECK(X, Y) (((X)&(Y)) == (Y))
 
 #endif

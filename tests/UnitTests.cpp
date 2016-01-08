@@ -21,11 +21,14 @@
 
 #include <iostream>
 #include <fstream>
-#include <string.h>
-#include <stdlib.h>
-#include <unistd.h>
-#include <math.h>
+#include <string>
+#include <cstdlib>
+
+#include <cmath>
 #include <iostream>
+
+#include <winsock2.h>
+#include <ws2tcpip.h>
 
 using namespace std;
 
@@ -118,10 +121,16 @@ int checkOutput(int i, int fails) {
   return fails;
 }
 
+
 int main(int argc, char** argv){
 
   int fails = 0;
   int i = 0;
+
+  //Initialize Winsock 
+  WSADATA wsaData;
+  int iResult = WSAStartup(MAKEWORD(2, 2), &wsaData);
+
   #if MPW_PacingMode == 1
   i = MPW_Test_PacingRate();
   checkOutput(i, fails);
@@ -141,7 +150,11 @@ int main(int argc, char** argv){
   i = Test_MPW_setChunkSize();
   checkOutput(i, fails);
 
+  WSACleanup();
+
   cout << "Unit tests completed. Number of failed tests: " << fails << endl;
   cout << "Number of successful tests: " << MPW_test_count - fails << endl;
   cout << "Please also run MPW_Functionaltests to more completely test MPWide." << endl;
+
+  return 0;
 }

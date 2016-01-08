@@ -19,15 +19,17 @@
  * along with MPWide.  If not, see <http://www.gnu.org/licenses/>.
  * **************************************************************/
 
-#include "Socket.h"
-#include <string.h>
+
+#include <string>
 #include <errno.h>
-#include <fcntl.h>
 #include <iostream>
 #include <cstdlib>
-#include <stdio.h>
-#include <netinet/tcp.h>
+#include <cstdio>
 
+#include <winsock2.h>
+#include <ws2tcpip.h>
+
+#include "Socket.h"
 #include "mpwide-macros.h"
 
 using namespace std;
@@ -36,15 +38,15 @@ Socket::Socket() :
   m_sock ( -1 )
 {
   memset(&m_addr, 0, sizeof( m_addr ));
-  set_non_blocking(false);
+  //set_non_blocking(false);
   set_no_delay(true);
 }
 
 Socket::~Socket()
 {
   if (is_valid()) {
-    shutdown(m_sock,SHUT_RDWR);
-    ::close(m_sock);
+	shutdown(m_sock, SD_BOTH);
+	::closesocket(m_sock);
   }
 }
 
@@ -80,8 +82,8 @@ void Socket::setWin(int size)
 void Socket::close()
 {
   if (is_valid()) {
-    shutdown(m_sock,SHUT_RDWR);
-    ::close(m_sock);
+	shutdown(m_sock,SD_BOTH);
+	::closesocket(m_sock);
     m_sock = -1;
   }
 }
@@ -136,8 +138,8 @@ bool Socket::accept()
 {
   socklen_t addr_length = (socklen_t) sizeof ( m_addr );
   int new_m_sock = ::accept ( m_sock, ( sockaddr * ) &m_addr, &addr_length );
-
-  ::close(m_sock);
+  ::shutdown(m_sock, SD_BOTH);
+  ::closesocket(m_sock);
   m_sock = new_m_sock;
   
   if ( m_sock <= 0 ) {
@@ -165,7 +167,7 @@ bool Socket::send ( const char* s, long long int size ) const
 ;
     if (ok == MPWIDE_SOCKET_WRMASK) {
       count = 0;
-      ssize_t status = ::send(m_sock, s+bytes_sent, sendsize-bytes_sent, tcp_send_flag);
+      size_t status = ::send(m_sock, s+bytes_sent, sendsize-bytes_sent, tcp_send_flag);
       if ( status == -1 ) {
         LOG_ERR("Socket.send error. Details: " << errno << "/" << strerror(errno));
         return false;
@@ -173,7 +175,8 @@ bool Socket::send ( const char* s, long long int size ) const
       bytes_sent += status;
     }
     else {
-      usleep(50000);
+      //usleep(50000);
+	  Sleep(50);
       #if REPORT_BUFFERSIZES > 0
       cout << "s";
       #endif
@@ -208,7 +211,7 @@ int Socket::recv ( char* s, long long int size ) const
   while(bytes_recv < size) {
     ok = Socket_select(m_sock, 0, MPWIDE_SOCKET_WRMASK, 10, 0);
     if (ok == MPWIDE_SOCKET_RDMASK) {
-      ssize_t status = ::recv( m_sock, s + bytes_recv, recvsize - bytes_recv, 0 );
+      size_t status = ::recv( m_sock, s + bytes_recv, recvsize - bytes_recv, 0 );
       bytes_recv -= status;
       
       if ( status <= 0 ) {
@@ -228,7 +231,8 @@ int Socket::recv ( char* s, long long int size ) const
           return -1;
         #endif
       } else {
-        usleep(50000);
+        //usleep(50000);
+		Sleep(50);
         cout << "r";
         if(++count == 1) {
           LOG_ERR("Recv timeout: " << errno << " / " << strerror(errno));
@@ -355,22 +359,35 @@ bool Socket::connect ( const string host, const int port )
 
 void Socket::set_no_delay(const bool no_delay)
 {
-    int state = no_delay ? 1 : 0;
-    setsockopt(m_sock, IPPROTO_TCP, TCP_NODELAY, &state, sizeof(state));
+    bool state = no_delay ? 1 : 0;
+    setsockopt(m_sock, IPPROTO_TCP, TCP_NODELAY, (const char*)&state, sizeof(state));
 }
 
 void Socket::set_non_blocking ( const bool b )
 {
-  int opts;
-  opts = fcntl (m_sock, F_GETFL);
-  if(opts < 0) return;
+  //int opts;
+  //opts = fcntl (m_sock, F_GETFL);
+  //if(opts < 0) return;
+
+  //Winsock:
+  // Set the socket I/O mode: In this case FIONBIO
+  // enables or disables the blocking mode for the 
+  // socket based on the numerical value of iMode.
+  // If iMode = 0, blocking is enabled; 
+  // If iMode != 0, non-blocking mode is enabled.
+
+  u_long opts;
   if(b) {
-    opts = ( opts | O_NONBLOCK );
+    opts = 1;
   }
   else {
-    opts = ( opts & ~O_NONBLOCK );
+    opts = 0;
   }
-  fcntl(m_sock, F_SETFL, opts);
+  //fcntl(m_sock, F_SETFL, opts);
+  int iResult = ioctlsocket(m_sock, FIONBIO, &opts);
+  //if (iResult != NO_ERROR)
+  //	  LOG_ERR("ioctlsocket failed with error: " << iResult);
+
 }
 
 /**
